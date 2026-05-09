@@ -1,6 +1,10 @@
+// AppContext.tsx — v1.1 — Added isGuest, guestMsgCount, showUpsell
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import type { View } from '../types';
+
+const GUEST_MSG_LIMIT = 15;
+const GUEST_COUNT_KEY = 'ec_guest_count';
 
 interface AppContextType {
   currentUser: User | null;
@@ -15,6 +19,13 @@ interface AppContextType {
   setSidebarOpen: (o: boolean) => void;
   isDark: boolean;
   setIsDark: (d: boolean) => void;
+  // Guest mode
+  isGuest: boolean;
+  guestMsgCount: number;
+  setGuestMsgCount: (n: number) => void;
+  guestMsgLimit: number;
+  showUpsell: boolean;
+  setShowUpsell: (v: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType>(null!);
@@ -26,29 +37,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [view,        setView_]       = useState<View>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDark,      setIsDark]      = useState(true);
+  const [showUpsell,  setShowUpsell]  = useState(false);
+
+  // Guest message count — persisted in localStorage
+  const [guestMsgCount, setGuestMsgCount_] = useState<number>(() => {
+    const stored = parseInt(localStorage.getItem(GUEST_COUNT_KEY) || '0', 10);
+    return isNaN(stored) ? 0 : stored;
+  });
+
+  const setGuestMsgCount = useCallback((n: number) => {
+    setGuestMsgCount_(n);
+    localStorage.setItem(GUEST_COUNT_KEY, String(n));
+  }, []);
+
+  // Derived: true when signed in but anonymous
+  const isGuest = !!(currentUser?.isAnonymous);
+
+  // Reset guest count when user upgrades from anonymous to real account
+  const prevIsGuestRef = useRef(isGuest);
+  useEffect(() => {
+    if (prevIsGuestRef.current && !isGuest && currentUser) {
+      // Just upgraded — clear guest count and close upsell
+      setGuestMsgCount(0);
+      setShowUpsell(false);
+    }
+    prevIsGuestRef.current = isGuest;
+  }, [isGuest, currentUser, setGuestMsgCount]);
 
   // Wrap setView to push browser history entries
   const setView = useCallback((v: View) => {
     setView_(v);
     if (v === 'chat') {
-      // Going back to chat — don't push, let back button handle it
       history.replaceState({ view: 'chat' }, '', '/');
     } else {
-      // Push a new history entry so back button returns here
       history.pushState({ view: v }, '', '/');
     }
   }, []);
 
-  // Listen to browser back/forward button
   useEffect(() => {
-    // Set initial state
     history.replaceState({ view: 'chat' }, '', '/');
-
     const handlePop = (e: PopStateEvent) => {
       const v = (e.state?.view as View) || 'chat';
-      setView_(v); // use internal setter to avoid pushing another history entry
+      setView_(v);
     };
-
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
   }, []);
@@ -67,10 +98,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Confirm dialog
   const [confirmState, setConfirmState] = useState<{
-    open: boolean;
-    title: string;
-    msg: string;
-    yesLabel: string;
+    open: boolean; title: string; msg: string; yesLabel: string;
   }>({ open: false, title: '', msg: '', yesLabel: 'Delete' });
   const confirmResolve = useRef<((v: boolean) => void) | null>(null);
 
@@ -98,10 +126,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       currentUser, setCurrentUser,
       authReady, setAuthReady,
       view, setView,
-      showToast,
-      showConfirm,
+      showToast, showConfirm,
       sidebarOpen, setSidebarOpen,
       isDark, setIsDark,
+      isGuest, guestMsgCount, setGuestMsgCount, guestMsgLimit: GUEST_MSG_LIMIT,
+      showUpsell, setShowUpsell,
     }}>
       {children}
 
@@ -124,17 +153,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           </div>
           <div style={{ height: '1px', background: 'var(--border-b)' }} />
           <div style={{ display: 'flex' }}>
-            <button
-              onClick={handleConfirmNo}
-              style={{ flex: 1, padding: '15px 0', fontSize: '15px', fontWeight: 500, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
+            <button onClick={handleConfirmNo} style={{ flex: 1, padding: '15px 0', fontSize: '15px', fontWeight: 500, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               Cancel
             </button>
             <div style={{ width: '1px', background: 'var(--border-b)', flexShrink: 0 }} />
-            <button
-              onClick={handleConfirmYes}
-              style={{ flex: 1, padding: '15px 0', fontSize: '15px', fontWeight: 700, color: '#ff6b6b', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
+            <button onClick={handleConfirmYes} style={{ flex: 1, padding: '15px 0', fontSize: '15px', fontWeight: 700, color: '#ff6b6b', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               {confirmState.yesLabel}
             </button>
           </div>
@@ -143,3 +166,4 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     </AppContext.Provider>
   );
 }
+      
