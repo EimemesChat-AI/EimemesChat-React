@@ -1,5 +1,4 @@
-// useChat.ts — v2.2 — Guest limit: show upsell at 15 msgs; increment count per send
-// v2.1 — Fix: SSE error events now persist to Firestore and show toast
+// useChat.ts — v2.1 — Fix: SSE error events now persist to Firestore and show toast
 import { useState, useRef, useCallback } from 'react';
 import { arrayUnion, updateDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -8,7 +7,7 @@ import { getTime } from '../lib/markdown';
 import type { Message, Attachment } from '../types';
 
 const MAX_MSGS   = 100;
-const AI_TIMEOUT = 60000; // 60s — resets on every received token
+const AI_TIMEOUT = 30000;
 
 export function useChat(
   convId: string | null,
@@ -19,7 +18,7 @@ export function useChat(
   isStreamingRef: React.MutableRefObject<boolean>,
   setMessages: (msgs: Message[]) => void,
 ) {
-  const { currentUser, showToast, isGuest, guestMsgCount, setGuestMsgCount, guestMsgLimit, setShowUpsell } = useApp();
+  const { currentUser, showToast } = useApp();
 
   const [isSending,        setIsSending]        = useState(false);
   const [isStreaming,      setIsStreaming]       = useState(false);
@@ -28,8 +27,8 @@ export function useChat(
   const [streamDone,       setStreamDone]        = useState(false);
   const [streamModel,      setStreamModel]       = useState('');
   const [streamDisclaimer, setStreamDisclaimer]  = useState<'critical' | 'web' | false>(false);
-  const [isSearching,      setIsSearching]       = useState(false);
-  const [streamSources,    setStreamSources]     = useState<{ title: string; url: string }[]>([]);
+  const [isSearching,      setIsSearching]        = useState(false);
+  const [streamSources,    setStreamSources]      = useState<{ title: string; url: string }[]>([]);
 
   const streamController = useRef<AbortController | null>(null);
   const renderQueueRef   = useRef<string[]>([]);
@@ -60,24 +59,11 @@ export function useChat(
     currentUser ? doc(db, 'users', currentUser.uid, 'conversations', id) : null,
   [currentUser]);
 
-  const sendMessage = useCallback(async (
-    text: string,
-    chipsUsedSetter: () => void,
-    attachment?: Attachment,
-    useWebSearch?: boolean,
-    modelMode?: string,
-  ) => {
+  const sendMessage = useCallback(async (text: string, chipsUsedSetter: () => void, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string) => {
     if (!text.trim() || isSending || !currentUser) return;
 
-    // ── Guest limit check ──────────────────────────────────────
-    if (isGuest) {
-      if (guestMsgCount >= guestMsgLimit) {
-        setShowUpsell(true);
-        return;
-      }
-      // Increment guest count before sending
-      setGuestMsgCount(guestMsgCount + 1);
-    }
+    // Rate limiting is enforced server-side (api/chat.js) with Firestore transactions.
+    // The server returns 429 when the daily limit is hit, which is handled below.
 
     setIsSending(true);
     chipsUsedSetter();
@@ -106,6 +92,7 @@ export function useChat(
       setConvTitle(tempTitle);
     }
 
+    // Save user message — include attachment name/type for display
     const userMsg: Message = {
       role: 'user', content: text, time: getTime(),
       ...(attachment && { attachment: { name: attachment.name, type: attachment.type } }),
@@ -119,6 +106,7 @@ export function useChat(
       setIsSending(false); return;
     }
 
+    // Reset stream state
     renderQueueRef.current = [];
     displayedRef.current   = '';
     if (renderTimerRef.current) { clearTimeout(renderTimerRef.current); renderTimerRef.current = null; }
@@ -128,25 +116,28 @@ export function useChat(
     setStreamDisclaimer(false as const);
     setIsSearching(false);
     setStreamSources([]);
+
     setIsTyping(true);
 
     streamController.current = new AbortController();
     const controller = streamController.current;
-    let timer = setTimeout(() => controller.abort(), AI_TIMEOUT);
-    const resetTimer = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(), AI_TIMEOUT); };
+    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT);
 
     try {
+      // Build history from local state — avoids an extra Firestore read per message.
+      // Include the user message we just saved (it may not be in `conversations` state yet).
       const convMsgs = conversations.find(c => c.id === activeConvId)?.messages || [];
-      const history  = [...convMsgs, userMsg].slice(-20);
+      const history = [...convMsgs, userMsg].slice(-20);
 
-      const body: Record<string, unknown> = {
-        message: text, history, isFirstMessage,
-        useWebSearch: !!useWebSearch, modelMode: modelMode || 'smart',
-      };
+      // Build request body — include attachment content for backend processing
+      const body: Record<string, unknown> = { message: text, history, isFirstMessage, useWebSearch: !!useWebSearch, modelMode: modelMode || 'smart' };
       if (attachment) {
+        // For images send full base64, for docs send extracted text
         body.attachment = {
-          name: attachment.name, type: attachment.type,
-          mimeType: attachment.mimeType, content: attachment.content,
+          name:     attachment.name,
+          type:     attachment.type,
+          mimeType: attachment.mimeType,
+          content:  attachment.content,
         };
       }
 
@@ -199,7 +190,7 @@ export function useChat(
             const parsed = JSON.parse(raw);
             if (parsed.searching)     { setIsTyping(false); setIsSearching(true); }
             if (parsed.error)         { setIsTyping(false); setIsSearching(false); fullText = parsed.error; enqueue(parsed.error); showToast(parsed.error); }
-            if (parsed.token)         { setIsTyping(false); setIsSearching(false); fullText += parsed.token; enqueue(parsed.token); resetTimer(); }
+            if (parsed.token)         { setIsTyping(false); setIsSearching(false); fullText += parsed.token; enqueue(parsed.token); }
 
             if (parsed.outputBlocked && parsed.safeReply) {
               fullText = parsed.safeReply;
@@ -230,6 +221,7 @@ export function useChat(
       setStreamDisclaimer(disclaimer);
       setStreamDone(true);
 
+      // Save AI message
       const aiMsg: Message = {
         role: 'assistant', content: fullText,
         time: getTime(), model, disclaimer,
@@ -237,6 +229,7 @@ export function useChat(
       };
       await updateDoc(convRef, { messages: arrayUnion(aiMsg), updatedAt: new Date() });
 
+      // Force-fetch latest messages before clearing streaming to prevent blank gap
       try {
         const freshSnap = await getDoc(convRef);
         if (freshSnap.exists()) {
@@ -273,8 +266,7 @@ export function useChat(
       setIsSending(false);
     }
   }, [isSending, currentUser, convId, conversations, createNewChat, setConvId, setConvTitle,
-      isStreamingRef, setMessages, showToast, getConvDocRef, enqueue,
-      isGuest, guestMsgCount, setGuestMsgCount, guestMsgLimit, setShowUpsell]);
+      isStreamingRef, setMessages, showToast, getConvDocRef, enqueue]);
 
   const stopStreaming = useCallback(() => {
     streamController.current?.abort();
@@ -288,4 +280,5 @@ export function useChat(
     setStreamDone,
   };
 }
-    
+
+                                
