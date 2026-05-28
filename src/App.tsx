@@ -59,7 +59,7 @@ export default function App() {
   useAuth();
   useTheme();
 
-  const { currentUser, authReady, view, setView, sidebarOpen, setSidebarOpen, isGuest, showUpsell, setShowUpsell } = useApp();
+  const { currentUser, authReady, view, setView, sidebarOpen, setSidebarOpen } = useApp();
   const [currentConvId,     setCurrentConvId]     = useState<string | null>(null);
   const [chipsUsed,         setChipsUsed]         = useState(localStorage.getItem('ec_chips_used') === 'true');
   const [dailyLimitReached, setDailyLimitReached] = useState(false);
@@ -266,10 +266,8 @@ export default function App() {
         )}
       </div>
 
-      {/* Upsell modal — shown to guests at message limit */}
-      <LoginModal upsell visible={showUpsell} onClose={() => setShowUpsell(false)} />
+      <LoginModal visible={!currentUser} />
     </div>
   );
 }
-
-        
+  
