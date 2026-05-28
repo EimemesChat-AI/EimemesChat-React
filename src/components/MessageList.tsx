@@ -1,4 +1,4 @@
-// MessageList.tsx — v1.1 — paddingBottom + scroll button offset for floating InputArea
+// MessageList.tsx — v1.2 — Smart auto-scroll: only follows stream if user is near bottom
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import MessageBubble from './MessageBubble';
 import StreamingBubble from './StreamingBubble';
@@ -36,7 +36,6 @@ interface Props {
   onRegen: (originalMsg: string) => void;
 }
 
-// Height of the floating InputArea — used for scroll padding and button offset
 const INPUT_AREA_HEIGHT = 170;
 
 export default function MessageList({
@@ -44,32 +43,38 @@ export default function MessageList({
   streamText, streamDone, streamModel, streamDisclaimer, streamSources,
   convId, chipsUsed, onChipClick, onRegen,
 }: Props) {
-  const bottomRef    = useRef<HTMLDivElement>(null);
-  const scrollRef    = useRef<HTMLDivElement>(null);
+  const bottomRef        = useRef<HTMLDivElement>(null);
+  const scrollRef        = useRef<HTMLDivElement>(null);
+  const userScrolledUp   = useRef(false); // true when user has scrolled away from bottom
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // Smooth scroll for discrete events (new message, typing starts)
+  // Smooth scroll for discrete events (new message sent, typing indicator appears)
   useEffect(() => {
+    userScrolledUp.current = false; // new message — reset, follow again
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, isTyping]);
 
-  // Instant scroll during streaming — no smooth animation at 55 updates/sec
+  // Auto-scroll during streaming — only if user hasn't scrolled up
   useEffect(() => {
     if (!isStreaming || !scrollRef.current) return;
+    if (userScrolledUp.current) return; // user is reading — don't fight them
     const el = scrollRef.current;
     el.scrollTop = el.scrollHeight;
   }, [streamText, isStreaming]);
 
-  // Show scroll-to-bottom button when user scrolls up
+  // Track whether user has scrolled up during streaming
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // If they scroll up more than 80px, stop following
+    userScrolledUp.current = distFromBottom > 80;
     setShowScrollBtn(distFromBottom > 120);
   }, []);
 
   const scrollToBottom = () => {
     haptic.light();
+    userScrolledUp.current = false; // resume following after manual scroll-to-bottom
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -83,7 +88,6 @@ export default function MessageList({
         className="scroll-thin"
         style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any, overscrollBehavior: 'none', background: 'transparent' }}
       >
-        {/* paddingBottom ensures last message is never hidden behind floating InputArea */}
         <div style={{ maxWidth: '740px', margin: '0 auto', padding: `24px 20px ${INPUT_AREA_HEIGHT}px`, display: 'flex', flexDirection: 'column' }}>
 
           {showWelcome && (
@@ -183,7 +187,6 @@ export default function MessageList({
         </div>
       </div>
 
-      {/* Scroll-to-bottom button — offset above InputArea */}
       {showScrollBtn && (
         <button
           onClick={scrollToBottom}
