@@ -76,6 +76,7 @@ export default function App() {
   const {
     isSending, isStreaming, isTyping, isSearching,
     streamText, streamDone, streamModel, streamDisclaimer, streamSources,
+    streamThinking, isThinking,
     sendMessage, stopStreaming,
   } = useChat(
     currentConvId, setCurrentConvId,
@@ -209,6 +210,8 @@ export default function App() {
                 streamModel={streamModel}
                 streamDisclaimer={streamDisclaimer}
                 streamSources={streamSources}
+                streamThinking={streamThinking}
+                isThinking={isThinking}
                 convId={currentConvId}
                 chipsUsed={chipsUsed}
                 onChipClick={handleSend}
@@ -270,4 +273,5 @@ export default function App() {
     </div>
   );
 }
-  
+
+                                                      
