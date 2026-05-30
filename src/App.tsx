@@ -96,11 +96,11 @@ export default function App() {
     }).catch(() => {});
   }, [currentUser]);
 
-  const handleSend = useCallback((text: string, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string) => {
+  const handleSend = useCallback((text: string, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string, useThinking?: boolean) => {
     sendMessage(text, () => {
       setChipsUsed(true);
       localStorage.setItem('ec_chips_used', 'true');
-    }, attachment, useWebSearch, modelMode);
+    }, attachment, useWebSearch, modelMode, useThinking);
   }, [sendMessage]);
 
   const handleRegen = useCallback(async (originalMsg: string) => {
@@ -274,4 +274,3 @@ export default function App() {
   );
 }
 
-                                                      
