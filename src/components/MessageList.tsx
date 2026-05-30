@@ -34,6 +34,8 @@ interface Props {
   chipsUsed: boolean;
   onChipClick: (prompt: string) => void;
   onRegen: (originalMsg: string) => void;
+  streamThinking: string;
+  isThinking: boolean;
 }
 
 const INPUT_AREA_HEIGHT = 170;
@@ -41,7 +43,7 @@ const INPUT_AREA_HEIGHT = 170;
 export default function MessageList({
   messages, isTyping, isSearching, isStreaming,
   streamText, streamDone, streamModel, streamDisclaimer, streamSources,
-  convId, chipsUsed, onChipClick, onRegen,
+  convId, chipsUsed, onChipClick, onRegen, streamThinking, isThinking,
 }: Props) {
   const bottomRef        = useRef<HTMLDivElement>(null);
   const scrollRef        = useRef<HTMLDivElement>(null);
@@ -180,6 +182,8 @@ export default function MessageList({
               disclaimer={streamDisclaimer}
               time={getTime()}
               sources={streamSources}
+              thinking={streamThinking}
+              isThinking={isThinking}
             />
           )}
 
@@ -213,5 +217,5 @@ export default function MessageList({
       )}
     </div>
   );
-}
-              
+  }
+                  
