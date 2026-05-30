@@ -1,8 +1,9 @@
 // api/chat.js
-// v5.3 — Thinking mode with streaming reasoning_content; casual short system prompt
+// v5.4 — Native Gemini REST API with proper thinkingConfig; Groq fallback stays OpenAI format
 // Changelog:
-//   v5.3 — Thinking mode: stream reasoning_content as { thinking } SSE events; skeleton UI support; casual system prompt
-//   v5.2 — gemini-1.5-flash as primary; Groq llama-3.3-70b-versatile as fallback on 429/error
+//   v5.4 — Migrated Gemini to native REST API (/v1beta/models/...); thinking via thinkingConfig; parts-based response
+//   v5.3 — Thinking mode attempt via OpenAI-compat (failed — unknown field)
+//   v5.2 — gemini-2.5-flash-lite primary; Groq llama-3.3-70b-versatile fallback
 //   v5.1 — Switched to Google Gemini 2.0 Flash; removed Groq fallbacks
 //   v5.0 — Tavily web search; auto-detect sensitive topics; inline source citations
 
@@ -30,11 +31,14 @@ const PROMPT_FINGERPRINT = buildFingerprint(FINGERPRINT_PROMPT);
 
 /* ── Constants ────────────────────────────────────────────────── */
 const DAILY_LIMIT      = 150;
-const MODEL_TIMEOUT_MS = 20000;
+const MODEL_TIMEOUT_MS = 25000;
 
 /* ── Model config ─────────────────────────────────────────────── */
 const GEMINI_MODEL = "gemini-2.5-flash-lite";
-const GEMINI_URL   = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+// Native REST endpoint — streaming with SSE
+const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
+// Non-streaming for title/search optimization
+const GEMINI_GEN_URL    = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions";
@@ -68,26 +72,58 @@ function adaptiveMaxTokens(message, hasAttachment) {
   return 1200;
 }
 
+/* ── Convert OpenAI-style history to Gemini native format ─────── */
+function toGeminiHistory(history) {
+  return history
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({
+      role:  m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+    }));
+}
+
 /* ── Tavily web search ────────────────────────────────────────── */
-async function optimizeSearchQuery(message, apiKey, useGroq = false) {
-  try {
-    const url   = useGroq ? GROQ_URL : GEMINI_URL;
-    const model = useGroq ? GROQ_MODEL : GEMINI_MODEL;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model, max_tokens: 40, temperature: 0.2,
-        messages: [
-          { role: "system", content: "Convert the user message into an optimal web search query. Output ONLY the search query — no explanation, no quotes, no punctuation at the end." },
-          { role: "user", content: message },
-        ],
-      }),
-    });
-    if (!res.ok) return message;
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content?.trim() || message;
-  } catch { return message; }
+async function optimizeSearchQuery(message, geminiApiKey, groqApiKey) {
+  // Use Gemini native for query optimization
+  if (geminiApiKey) {
+    try {
+      const res = await fetch(GEMINI_GEN_URL, {
+        method: "POST",
+        headers: { "x-goog-api-key": geminiApiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: message }] }],
+          systemInstruction: { parts: [{ text: "Convert the user message into an optimal web search query. Output ONLY the search query — no explanation, no quotes, no punctuation at the end." }] },
+          generationConfig: { maxOutputTokens: 40, temperature: 0.2 },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const query = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (query) return query;
+      }
+    } catch { /* fall through */ }
+  }
+  // Groq fallback for search optimization
+  if (groqApiKey) {
+    try {
+      const res = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${groqApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: GROQ_MODEL, max_tokens: 40, temperature: 0.2,
+          messages: [
+            { role: "system", content: "Convert the user message into an optimal web search query. Output ONLY the search query." },
+            { role: "user",   content: message },
+          ],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content?.trim() || message;
+      }
+    } catch { /* fall through */ }
+  }
+  return message;
 }
 
 async function searchWeb(query) {
@@ -143,28 +179,28 @@ function setCorsHeaders(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-/* ── Stream a model ───────────────────────────────────────────── */
-async function streamModel({ url, apiKey, model, messages, maxTokens, res, scanner, enableThinking = false }) {
+/* ── Stream Gemini (native REST) ──────────────────────────────── */
+async function streamGemini({ apiKey, systemPrompt, contents, maxTokens, enableThinking, res, scanner }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
 
-  // Build request body — enable thinking for Gemini 2.5 Flash only
-  const body = {
-    model, messages,
-    max_tokens: maxTokens,
-    temperature: enableThinking ? 1 : 0.72, // Gemini thinking requires temp=1
-    stream: true,
+  const generationConfig = {
+    maxOutputTokens: maxTokens,
+    temperature: enableThinking ? 1 : 0.72,
   };
 
-  // Gemini 2.5 thinking budget — sends reasoning_content chunks before reply
   if (enableThinking) {
-    body.thinking = { type: "enabled", budget_tokens: 3000 };
+    generationConfig.thinkingConfig = { thinkingBudget: 8000 };
   }
 
-  const apiRes = await fetch(url, {
+  const apiRes = await fetch(GEMINI_STREAM_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig,
+    }),
     signal: controller.signal,
   });
 
@@ -172,11 +208,11 @@ async function streamModel({ url, apiKey, model, messages, maxTokens, res, scann
 
   if (!apiRes.ok) {
     const errText = await apiRes.text();
-    console.error(`[${model}] HTTP ${apiRes.status}: ${errText.slice(0, 200)}`);
+    console.error(`[${GEMINI_MODEL}] HTTP ${apiRes.status}: ${errText.slice(0, 300)}`);
     return { success: false, status: apiRes.status };
   }
 
-  console.log(`✅ Streaming: ${model}${enableThinking ? ' (thinking)' : ''}`);
+  console.log(`✅ Streaming: ${GEMINI_MODEL}${enableThinking ? ' (thinking)' : ''}`);
 
   const reader  = apiRes.body.getReader();
   const decoder = new TextDecoder();
@@ -196,23 +232,88 @@ async function streamModel({ url, apiKey, model, messages, maxTokens, res, scann
 
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") break streamLoop;
+      const raw = line.slice(6).trim();
+      if (!raw || raw === "[DONE]") continue;
 
       try {
-        const parsed = JSON.parse(data);
-        const delta  = parsed.choices?.[0]?.delta;
-        if (!delta) continue;
+        const parsed = JSON.parse(raw);
+        const parts  = parsed.candidates?.[0]?.content?.parts || [];
 
-        // Thinking token — stream to client as { thinking } event
-        const thinkToken = delta.reasoning_content || delta.thinking_content || "";
-        if (thinkToken) {
-          thinkingText += thinkToken;
-          sseEvent(res, { thinking: thinkToken });
-          continue;
+        for (const part of parts) {
+          if (!part.text) continue;
+
+          // Thinking part — has thought: true flag
+          if (part.thought === true) {
+            thinkingText += part.text;
+            sseEvent(res, { thinking: part.text });
+            continue;
+          }
+
+          // Regular response token
+          const leakGram = scanner.checkChunk(part.text);
+          if (leakGram) {
+            leaked = true;
+            const safeReply = getBlockMessage("system_leak");
+            sseEvent(res, { outputBlocked: true, safeReply });
+            sseEvent(res, { done: true, model: GEMINI_MODEL, reply: safeReply });
+            res.end(); break streamLoop;
+          }
+
+          fullText += part.text;
+          sseEvent(res, { token: part.text });
         }
+      } catch { /* malformed chunk */ }
+    }
+  }
 
-        const token = delta.content || "";
+  return { success: true, leaked, fullText, thinkingText, model: GEMINI_MODEL };
+}
+
+/* ── Stream Groq (OpenAI format — fallback) ───────────────────── */
+async function streamGroq({ apiKey, messages, maxTokens, res, scanner }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+
+  const apiRes = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: maxTokens, temperature: 0.72, stream: true }),
+    signal: controller.signal,
+  });
+
+  clearTimeout(timer);
+
+  if (!apiRes.ok) {
+    const errText = await apiRes.text();
+    console.error(`[${GROQ_MODEL}] HTTP ${apiRes.status}: ${errText.slice(0, 200)}`);
+    return { success: false, status: apiRes.status };
+  }
+
+  console.log(`✅ Streaming: ${GROQ_MODEL}`);
+
+  const reader  = apiRes.body.getReader();
+  const decoder = new TextDecoder();
+  let buf      = "";
+  let fullText = "";
+  let leaked   = false;
+
+  streamLoop:
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") break streamLoop;
+
+      try {
+        const parsed = JSON.parse(raw);
+        const token  = parsed.choices?.[0]?.delta?.content || "";
         if (!token) continue;
 
         const leakGram = scanner.checkChunk(token);
@@ -220,7 +321,7 @@ async function streamModel({ url, apiKey, model, messages, maxTokens, res, scann
           leaked = true;
           const safeReply = getBlockMessage("system_leak");
           sseEvent(res, { outputBlocked: true, safeReply });
-          sseEvent(res, { done: true, model, reply: safeReply });
+          sseEvent(res, { done: true, model: GROQ_MODEL, reply: safeReply });
           res.end(); break streamLoop;
         }
 
@@ -230,27 +331,46 @@ async function streamModel({ url, apiKey, model, messages, maxTokens, res, scann
     }
   }
 
-  return { success: true, leaked, fullText, thinkingText, model };
+  return { success: true, leaked, fullText, thinkingText: '', model: GROQ_MODEL };
 }
 
 /* ── Title generation ─────────────────────────────────────────── */
-async function generateTitle({ url, apiKey, model, safeMessage, fullText, res }) {
+async function generateTitle({ geminiApiKey, groqApiKey, safeMessage, fullText, res }) {
+  const prompt = `User: "${safeMessage.slice(0, 200)}"\nAI: "${fullText.slice(0, 200)}"\n\nGenerate an ultra-short chat title — 2-5 words, no punctuation, no quotes. Output ONLY the title.`;
+
   try {
-    const titleRes = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model, max_tokens: 16, temperature: 0.4,
-        messages: [
-          { role: "system", content: "Generate an ultra-short chat title. Output ONLY the title, 2-5 words, no punctuation, no quotes." },
-          { role: "user",   content: `User: "${safeMessage.slice(0, 200)}"\nAI: "${fullText.slice(0, 200)}"\n\nTitle:` },
-        ],
-      }),
-    });
-    if (titleRes.ok) {
-      const td    = await titleRes.json();
-      const title = td.choices?.[0]?.message?.content?.trim().slice(0, 60);
-      if (title) sseEvent(res, { title });
+    if (geminiApiKey) {
+      const r = await fetch(GEMINI_GEN_URL, {
+        method: "POST",
+        headers: { "x-goog-api-key": geminiApiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 16, temperature: 0.4 },
+        }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        const t = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim().slice(0, 60);
+        if (t) { sseEvent(res, { title: t }); return; }
+      }
+    }
+    if (groqApiKey) {
+      const r = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${groqApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: GROQ_MODEL, max_tokens: 16, temperature: 0.4,
+          messages: [
+            { role: "system", content: "Generate an ultra-short chat title. Output ONLY the title, 2-5 words, no punctuation, no quotes." },
+            { role: "user",   content: prompt },
+          ],
+        }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        const t = d.choices?.[0]?.message?.content?.trim().slice(0, 60);
+        if (t) sseEvent(res, { title: t });
+      }
     }
   } catch { /* ignore */ }
 }
@@ -282,7 +402,7 @@ export default async function handler(req, res) {
   const GROQ_API_KEY   = process.env.GROQ_API_KEY;
   if (!GEMINI_API_KEY && !GROQ_API_KEY) return res.status(500).json({ error: "No AI API key configured." });
 
-  const { message, history, isFirstMessage, attachment, useWebSearch } = req.body;
+  const { message, history, isFirstMessage, attachment, useWebSearch, useThinking } = req.body;
   if (!message) return res.status(400).json({ error: "Message required" });
 
   const inputCheck = shieldInput(message);
@@ -297,8 +417,10 @@ export default async function handler(req, res) {
   const safeMessage     = inputCheck.sanitized;
   const needsDisclaimer = CRITICAL_PATTERNS.test(safeMessage);
   const shouldSearch    = useWebSearch === true;
+  const enableThinking  = useThinking === true && !!GEMINI_API_KEY; // only for Gemini
   const maxTokens       = adaptiveMaxTokens(safeMessage, !!attachment) + (shouldSearch ? 400 : 0);
-  const trimmedHistory  = Array.isArray(history)
+
+  const trimmedHistory = Array.isArray(history)
     ? history.slice(-8).map(({ role, content }) => ({ role, content }))
     : [];
 
@@ -323,9 +445,7 @@ export default async function handler(req, res) {
   let searchResults = null;
   let searchContext = '';
   if (shouldSearch) {
-    const useGroqForSearch = !GEMINI_API_KEY;
-    const searchApiKey = useGroqForSearch ? GROQ_API_KEY : GEMINI_API_KEY;
-    const optimizedQuery = await optimizeSearchQuery(safeMessage, searchApiKey, useGroqForSearch);
+    const optimizedQuery = await optimizeSearchQuery(safeMessage, GEMINI_API_KEY, GROQ_API_KEY);
     searchResults = await searchWeb(optimizedQuery);
     if (searchResults?.length) {
       searchContext = buildSearchContext(searchResults);
@@ -335,43 +455,50 @@ export default async function handler(req, res) {
 
   const FULL_SYSTEM_PROMPT = BEHAVIORAL_PROMPT + userPrefsPrompt;
 
-  /* ── Build user message ───────────────────────────────────────── */
-  let userMessageContent;
+  /* ── Build user message part ──────────────────────────────────── */
+  let userParts;
   if (attachment?.type === 'image') {
     const base64 = attachment.content.split(',')[1] || attachment.content;
-    userMessageContent = [
-      { type: "image_url", image_url: { url: `data:${attachment.mimeType};base64,${base64}` } },
-      { type: "text", text: safeMessage || "Describe this image in detail." },
+    userParts = [
+      { inlineData: { mimeType: attachment.mimeType, data: base64 } },
+      { text: safeMessage || "Describe this image in detail." },
     ];
   } else if (attachment?.content) {
-    userMessageContent = `[Attached file: ${attachment.name}]\n\n${attachment.content}\n\n---\nUser question: ${safeMessage}${searchContext}`;
+    userParts = [{ text: `[Attached file: ${attachment.name}]\n\n${attachment.content}\n\n---\nUser question: ${safeMessage}${searchContext}` }];
   } else {
-    userMessageContent = safeMessage + searchContext;
+    userParts = [{ text: safeMessage + searchContext }];
   }
 
-  const messages = [
+  // Gemini native contents array (history + current message)
+  const geminiContents = [
+    ...toGeminiHistory(trimmedHistory),
+    { role: "user", parts: userParts },
+  ];
+
+  // OpenAI-format messages for Groq fallback
+  const openaiMessages = [
     { role: "system", content: FULL_SYSTEM_PROMPT },
     ...trimmedHistory,
-    { role: "user", content: userMessageContent },
+    { role: "user", content: attachment?.content
+        ? `[Attached file: ${attachment.name}]\n\n${attachment.content}\n\n---\nUser question: ${safeMessage}${searchContext}`
+        : safeMessage + searchContext
+    },
   ];
 
   const scanner = createStreamScanner(PROMPT_FINGERPRINT);
 
-  /* ── Try Gemini with thinking, fall back to Groq ──────────────── */
-  let result   = null;
-  let usedApiKey = null;
-  let usedUrl    = null;
-  let usedModel  = null;
+  /* ── Try Gemini native, fall back to Groq ─────────────────────── */
+  let result = null;
 
   if (GEMINI_API_KEY) {
-    console.log(`[chat] uid=${uid} model=${GEMINI_MODEL} thinking=true search=${shouldSearch}`);
+    console.log(`[chat] uid=${uid} model=${GEMINI_MODEL} thinking=${enableThinking} search=${shouldSearch}`);
     try {
-      result = await streamModel({
-        url: GEMINI_URL, apiKey: GEMINI_API_KEY, model: GEMINI_MODEL,
-        messages, maxTokens, res, scanner,
-        enableThinking: true, // enable reasoning for Gemini 2.5
+      result = await streamGemini({
+        apiKey: GEMINI_API_KEY,
+        systemPrompt: FULL_SYSTEM_PROMPT,
+        contents: geminiContents,
+        maxTokens, enableThinking, res, scanner,
       });
-      usedApiKey = GEMINI_API_KEY; usedUrl = GEMINI_URL; usedModel = GEMINI_MODEL;
     } catch (err) {
       console.error(`[${GEMINI_MODEL}] Error:`, err.name === "AbortError" ? "Timed out" : err.message);
       result = { success: false };
@@ -382,12 +509,12 @@ export default async function handler(req, res) {
     console.log(`[chat] Falling back to Groq (${GROQ_MODEL})`);
     try {
       const fallbackScanner = createStreamScanner(PROMPT_FINGERPRINT);
-      result = await streamModel({
-        url: GROQ_URL, apiKey: GROQ_API_KEY, model: GROQ_MODEL,
-        messages, maxTokens, res, scanner: fallbackScanner,
-        enableThinking: false, // Groq doesn't support thinking
+      result = await streamGroq({
+        apiKey: GROQ_API_KEY,
+        messages: openaiMessages,
+        maxTokens, res,
+        scanner: fallbackScanner,
       });
-      usedApiKey = GROQ_API_KEY; usedUrl = GROQ_URL; usedModel = GROQ_MODEL;
     } catch (err) {
       console.error(`[${GROQ_MODEL}] Error:`, err.name === "AbortError" ? "Timed out" : err.message);
       result = { success: false };
@@ -402,14 +529,16 @@ export default async function handler(req, res) {
   if (result.leaked) return;
 
   sseEvent(res, {
-    done: true, model: usedModel, reply: result.fullText,
+    done: true,
+    model: result.model,
+    reply: result.fullText,
     ...(result.thinkingText && { thinkingDone: true }),
     ...((needsDisclaimer || shouldSearch) && { disclaimer: true }),
     ...(searchResults?.length && { sources: searchResults }),
   });
 
   if (isFirstMessage && result.fullText) {
-    await generateTitle({ url: usedUrl, apiKey: usedApiKey, model: usedModel, safeMessage, fullText: result.fullText, res });
+    await generateTitle({ geminiApiKey: GEMINI_API_KEY, groqApiKey: GROQ_API_KEY, safeMessage, fullText: result.fullText, res });
   }
 
   res.end();
