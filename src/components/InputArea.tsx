@@ -1,5 +1,4 @@
-// InputArea.tsx — v2.3 — Improved file processing indicator with progress bar; better error UX
-// v2.2 — Truly transparent floating input; gradient fade via background not mask
+// InputArea.tsx — v2.1 — Floating ChatGPT-style layout; gradient fade above; no model selector
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { processFile, getFileIcon } from '../lib/fileReader';
 import { haptic } from '../lib/haptic';
@@ -74,14 +73,16 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
   const busy = isSending || isStreaming;
 
   return (
-    /* Floating wrapper — top fades transparent → page bg so messages dissolve behind input */
+    /* Floating wrapper — transparent bg, gradient fade masks messages above */
     <div style={{
       position: 'relative',
       flexShrink: 0,
-      paddingTop: '40px',
+      paddingTop: '32px',
       paddingInline: '16px',
       paddingBottom: 'calc(12px + var(--sab))',
-      background: 'linear-gradient(to bottom, transparent 0%, var(--fade-top) 40px)',
+      background: 'transparent',
+      maskImage: 'linear-gradient(to bottom, transparent 0%, black 28px)',
+      WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 28px)',
     }}>
       <div style={{ maxWidth: '740px', margin: '0 auto' }}>
 
@@ -94,20 +95,12 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
             border: '1px solid var(--border)',
           }}>
             {processing ? (
-              <div style={{ width: '100%' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <div style={{ width: '16px', height: '16px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-1)' }}>Reading file…</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Please wait</div>
-                  </div>
+              <>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--glass-3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: '16px', height: '16px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                 </div>
-                <div style={{ height: '3px', borderRadius: '999px', background: 'var(--glass-3)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: '40%', borderRadius: '999px', background: 'var(--accent)', animation: 'progress-slide 1.4s ease-in-out infinite' }} />
-                </div>
-              </div>
+                <span style={{ fontSize: '13px', color: 'var(--text-3)' }}>Reading file…</span>
+              </>
             ) : attachment && (
               <>
                 {attachment.type === 'image'
@@ -141,11 +134,11 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
         {/* ── Floating input box ── */}
         <div style={{
           background: 'var(--input-bg)',
-          backdropFilter: 'blur(24px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          backdropFilter: 'blur(32px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(32px) saturate(200%)',
           border: '1px solid var(--border)',
           borderRadius: '20px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.18), 0 1px 0 rgba(255,255,255,0.06) inset',
           padding: '12px 14px 10px',
           display: 'flex',
           flexDirection: 'column',
@@ -291,8 +284,8 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
         <input ref={fileInputRef} type="file" accept={ACCEPTED} onChange={handleFileChange} style={{ display: 'none' }} />
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
-                          
+                  
