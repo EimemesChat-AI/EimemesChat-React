@@ -62,7 +62,7 @@ export function useChat(
     currentUser ? doc(db, 'users', currentUser.uid, 'conversations', id) : null,
   [currentUser]);
 
-  const sendMessage = useCallback(async (text: string, chipsUsedSetter: () => void, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string) => {
+  const sendMessage = useCallback(async (text: string, chipsUsedSetter: () => void, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string, useThinking?: boolean) => {
     if (!text.trim() || isSending || !currentUser) return;
 
     // Rate limiting is enforced server-side (api/chat.js) with Firestore transactions.
@@ -287,5 +287,4 @@ export function useChat(
     setStreamDone,
   };
 }
-
-        
+    
