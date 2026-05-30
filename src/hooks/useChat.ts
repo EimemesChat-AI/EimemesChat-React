@@ -1,4 +1,5 @@
-// useChat.ts — v2.1 — Fix: SSE error events now persist to Firestore and show toast
+// useChat.ts — v2.2 — Thinking mode: stream reasoning tokens; isThinking + streamThinking state
+// v2.1 — Fix: SSE error events now persist to Firestore and show toast
 import { useState, useRef, useCallback } from 'react';
 import { arrayUnion, updateDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -29,6 +30,8 @@ export function useChat(
   const [streamDisclaimer, setStreamDisclaimer]  = useState<'critical' | 'web' | false>(false);
   const [isSearching,      setIsSearching]        = useState(false);
   const [streamSources,    setStreamSources]      = useState<{ title: string; url: string }[]>([]);
+  const [streamThinking,   setStreamThinking]     = useState('');
+  const [isThinking,       setIsThinking]          = useState(false);
 
   const streamController = useRef<AbortController | null>(null);
   const renderQueueRef   = useRef<string[]>([]);
@@ -116,6 +119,8 @@ export function useChat(
     setStreamDisclaimer(false as const);
     setIsSearching(false);
     setStreamSources([]);
+    setStreamThinking('');
+    setIsThinking(false);
 
     setIsTyping(true);
 
@@ -189,8 +194,9 @@ export function useChat(
           try {
             const parsed = JSON.parse(raw);
             if (parsed.searching)     { setIsTyping(false); setIsSearching(true); }
+            if (parsed.thinking)      { setIsTyping(false); setIsThinking(true); setStreamThinking(t => t + parsed.thinking); }
             if (parsed.error)         { setIsTyping(false); setIsSearching(false); fullText = parsed.error; enqueue(parsed.error); showToast(parsed.error); }
-            if (parsed.token)         { setIsTyping(false); setIsSearching(false); fullText += parsed.token; enqueue(parsed.token); }
+            if (parsed.token)         { setIsTyping(false); setIsSearching(false); setIsThinking(false); fullText += parsed.token; enqueue(parsed.token); }
 
             if (parsed.outputBlocked && parsed.safeReply) {
               fullText = parsed.safeReply;
@@ -276,9 +282,10 @@ export function useChat(
   return {
     isSending, isStreaming, isTyping, isSearching,
     streamText, streamDone, streamModel, streamDisclaimer, streamSources,
+    streamThinking, isThinking,
     sendMessage, stopStreaming,
     setStreamDone,
   };
 }
 
-                                
+      
