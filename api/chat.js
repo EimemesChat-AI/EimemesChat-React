@@ -179,6 +179,119 @@ function setCorsHeaders(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
+
+/* ── Memory system ────────────────────────────────────────────── */
+const MEMORY_LIMIT = 30;
+const MEMORY_CATEGORIES = ['fact', 'preference', 'style', 'interest', 'context'];
+
+const PERSONAL_SIGNAL = /\b(i am|i'm|i work|my name|i like|i love|i hate|i prefer|i study|i live|i want|i need|i always|i usually|i never|i enjoy|i use|my job|my hobby|my goal|i feel|i think|call me|we are|our team|i graduated|i'm a|i've been)\b/i;
+
+function shouldExtractMemory(userMsg, aiReply) {
+  if ((userMsg.length + aiReply.length) < 120) return false;
+  if (!PERSONAL_SIGNAL.test(userMsg)) return false;
+  return true;
+}
+
+async function loadMemories(uid) {
+  try {
+    const snap = await db.collection('users').doc(uid)
+      .collection('memories').orderBy('createdAt', 'desc').limit(MEMORY_LIMIT).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch { return []; }
+}
+
+async function extractAndUpdateMemories(uid, userMsg, aiReply, geminiApiKey) {
+  if (!shouldExtractMemory(userMsg, aiReply)) return;
+
+  const existing = await loadMemories(uid);
+
+  const existingBlock = existing.length
+    ? 'Existing memories:\n' + existing.map((m, i) => `[${i}] (${m.category}) ${m.text}`).join('\n')
+    : 'No existing memories yet.';
+
+  const extractionPrompt = `You are a memory manager for an AI assistant. Analyse this conversation exchange and decide what to remember about the user.
+
+${existingBlock}
+
+New conversation:
+User: "${userMsg.slice(0, 600)}"
+AI: "${aiReply.slice(0, 600)}"
+
+Rules:
+- Extract facts, preferences, communication style, interests, and context about the USER only
+- Categories: fact (name/job/location/age), preference (likes/dislikes/habits), style (tone/language/communication), interest (hobbies/topics), context (current situation/goals)
+- If new info UPDATES an existing memory, use action UPDATE with the existing memory index
+- If new info CONTRADICTS an existing memory, use DELETE the old index then ADD new
+- If already captured, use NONE
+- Be specific and concise — max 12 words per memory
+- Capture communication style: casual language, slang, preferred response length, tone
+- If nothing meaningful, return NONE
+
+Respond ONLY with valid JSON, no markdown, no explanation:
+{"action":"ADD","category":"fact","text":"User is a software engineer"}
+OR {"action":"UPDATE","index":2,"text":"Updated memory text"}
+OR {"action":"DELETE","index":2}
+OR {"action":"NONE"}`;
+
+  try {
+    const res = await fetch(GEMINI_GEN_URL, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': geminiApiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
+        generationConfig: { maxOutputTokens: 80, temperature: 0.1 },
+      }),
+    });
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!raw) return;
+
+    const clean  = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+    const result = JSON.parse(clean);
+    const memRef = db.collection('users').doc(uid).collection('memories');
+
+    if (result.action === 'ADD' && result.text && MEMORY_CATEGORIES.includes(result.category)) {
+      if (existing.length >= MEMORY_LIMIT) {
+        await memRef.doc(existing[existing.length - 1].id).delete();
+      }
+      await memRef.add({
+        text: result.text, category: result.category,
+        createdAt: new Date(), updatedAt: new Date(), source: 'auto',
+      });
+      console.log(`[memory] ADD (${result.category}): "${result.text}"`);
+
+    } else if (result.action === 'UPDATE' && typeof result.index === 'number' && existing[result.index]) {
+      await memRef.doc(existing[result.index].id).update({ text: result.text, updatedAt: new Date() });
+      console.log(`[memory] UPDATE [${result.index}]: "${result.text}"`);
+
+    } else if (result.action === 'DELETE' && typeof result.index === 'number' && existing[result.index]) {
+      await memRef.doc(existing[result.index].id).delete();
+      console.log(`[memory] DELETE [${result.index}]`);
+    }
+
+  } catch (err) {
+    console.warn('[memory] Extraction failed:', err.message);
+  }
+}
+
+async function buildMemoryPrompt(uid) {
+  try {
+    const memories = await loadMemories(uid);
+    if (!memories.length) return '';
+    const grouped = {};
+    for (const m of memories) {
+      if (!grouped[m.category]) grouped[m.category] = [];
+      grouped[m.category].push(m.text);
+    }
+    const labels = { fact: 'About user', preference: 'Preferences', style: 'Communication style', interest: 'Interests', context: 'Current context' };
+    const lines = Object.entries(grouped).map(([cat, items]) => `${labels[cat] || cat}: ${items.join('; ')}`);
+    return '\n\nWhat you remember about this user:\n' + lines.join('\n');
+  } catch { return ''; }
+}
+
 /* ── Stream Gemini (native REST) ──────────────────────────────── */
 async function streamGemini({ apiKey, systemPrompt, contents, maxTokens, enableThinking, res, scanner }) {
   const controller = new AbortController();
@@ -453,7 +566,8 @@ export default async function handler(req, res) {
     }
   }
 
-  const FULL_SYSTEM_PROMPT = BEHAVIORAL_PROMPT + userPrefsPrompt;
+  const memoryPrompt = await buildMemoryPrompt(uid);
+  const FULL_SYSTEM_PROMPT = BEHAVIORAL_PROMPT + userPrefsPrompt + memoryPrompt;
 
   /* ── Build user message part ──────────────────────────────────── */
   let userParts;
@@ -542,4 +656,10 @@ export default async function handler(req, res) {
   }
 
   res.end();
+
+  // ── Silent async memory extraction — runs after response, never blocks user ──
+  if (result.fullText && GEMINI_API_KEY) {
+    extractAndUpdateMemories(uid, safeMessage, result.fullText, GEMINI_API_KEY)
+      .catch(err => console.warn('[memory] Background extraction error:', err.message));
+  }
 }
