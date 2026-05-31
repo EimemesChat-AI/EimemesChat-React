@@ -1,4 +1,4 @@
-// MessageBubble.tsx — v1.1 — Error messages shown as styled bubble with icon + retry button
+// MessageBubble.tsx — v1.2 — Voice output via Web Speech API
 import React, { useEffect, useRef, useState } from 'react';
 import { renderMarkdown, highlightCodeBlocks } from '../lib/markdown';
 import { useApp } from '../context/AppContext';
@@ -39,14 +39,34 @@ function ActionBtn({ title, onClick, active, activeColor, children }: {
   );
 }
 
+// Strip markdown syntax so speech sounds natural
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, 'code block')   // code blocks
+    .replace(/`[^`]+`/g, '')                      // inline code
+    .replace(/#{1,6}\s+/g, '')                    // headings
+    .replace(/\*\*(.*?)\*\*/g, '$1')              // bold
+    .replace(/\*(.*?)\*/g, '$1')                  // italic
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')           // links
+    .replace(/!\[.*?\]\(.*?\)/g, '')              // images
+    .replace(/[-*+]\s+/g, '')                     // list bullets
+    .replace(/\d+\.\s+/g, '')                     // numbered lists
+    .replace(/>\s+/g, '')                         // blockquotes
+    .replace(/\n{2,}/g, '. ')                     // paragraph breaks
+    .replace(/\n/g, ' ')                          // line breaks
+    .replace(/\s{2,}/g, ' ')                      // extra spaces
+    .trim();
+}
+
 export default function MessageBubble({ message, isLast, lastUserMsg, convId, onRegen }: Props) {
   const { showToast } = useApp();
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef    = useRef<HTMLDivElement>(null);
+  const uttRef     = useRef<SpeechSynthesisUtterance | null>(null);
   const [thumbUp,   setThumbUp]   = useState(false);
   const [thumbDown, setThumbDown] = useState(false);
   const [copied,    setCopied]    = useState(false);
+  const [speaking,  setSpeaking]  = useState(false);
 
-  // Stable key for scoping citation buttons to the correct SourcesList
   const msgKey = `${message.role}-${message.time}-${message.content.slice(0, 32)}`;
 
   useEffect(() => {
@@ -56,6 +76,44 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
       highlightCodeBlocks(bodyRef.current, showToast);
     }
   }, [message.content, message.role, showToast, msgKey]);
+
+  // Cancel speech when component unmounts
+  useEffect(() => {
+    return () => {
+      if (uttRef.current) window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  const handleSpeak = () => {
+    if (!window.speechSynthesis) { showToast('Voice not supported on this browser'); return; }
+
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+
+    haptic.light();
+    const clean = stripMarkdown(message.content);
+    const utt   = new SpeechSynthesisUtterance(clean);
+    utt.rate    = 1.05;
+    utt.pitch   = 1;
+    utt.volume  = 1;
+
+    // Pick a natural English voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium'))
+    ) || voices.find(v => v.lang.startsWith('en'));
+    if (preferred) utt.voice = preferred;
+
+    utt.onend   = () => setSpeaking(false);
+    utt.onerror = () => setSpeaking(false);
+
+    uttRef.current = utt;
+    window.speechSynthesis.speak(utt);
+    setSpeaking(true);
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content)
@@ -69,8 +127,7 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
     else handleCopy();
   };
 
-  const isUser = message.role === 'user';
-  // Error messages are saved with model: '' and contain error text
+  const isUser  = message.role === 'user';
   const isError = !isUser && message.model === '' && message.content.includes('error')
     || (!isUser && message.model === '' && (message.content.includes('try again') || message.content.includes('Permission denied')));
 
@@ -92,16 +149,10 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
               </span>
             </div>
           )}
-          {/* Soft fully-rounded bubble — ChatGPT style */}
           <div style={{
-            background: '#2f2f2f',
-            borderRadius: '22px',
-            padding: '12px 20px',
-            color: 'rgba(255,255,255,0.92)',
-            fontSize: '16px',
-            lineHeight: 1.6,
-            wordBreak: 'break-word',
-            whiteSpace: 'pre-wrap',
+            background: '#2f2f2f', borderRadius: '22px', padding: '12px 20px',
+            color: 'rgba(255,255,255,0.92)', fontSize: '16px',
+            lineHeight: 1.6, wordBreak: 'break-word', whiteSpace: 'pre-wrap',
           }}>
             {message.content}
           </div>
@@ -115,7 +166,6 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
     <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '4px 0 4px' }}>
       <div style={{ width: '100%' }}>
 
-        {/* Error bubble — shown instead of normal message body */}
         {isError ? (
           <div style={{
             display: 'inline-flex', alignItems: 'flex-start', gap: '10px',
@@ -123,7 +173,6 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
             background: 'rgba(255,75,75,0.08)', border: '1px solid rgba(255,75,75,0.2)',
             maxWidth: '100%',
           }}>
-            {/* Warning icon */}
             <div style={{ flexShrink: 0, marginTop: '1px' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/>
@@ -157,7 +206,6 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
             </div>
           </div>
         ) : (
-          /* Normal message body */
           <div
             ref={bodyRef}
             className="msg-body"
@@ -167,10 +215,9 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
 
         <Disclaimer type={message.disclaimer || false} />
 
-        {/* Web search sources */}
         {message.sources?.length ? <SourcesList sources={message.sources} msgKey={msgKey} /> : null}
 
-        {/* Action icons — ChatGPT style, always visible on last, hover on others */}
+        {/* Action bar */}
         {isLast && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0px', marginTop: '6px' }}>
 
@@ -188,6 +235,26 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
                 <polyline points="1 4 1 10 7 10"/>
                 <path d="M3.51 15a9 9 0 1 0 .49-3.54"/>
               </svg>
+            </ActionBtn>
+
+            {/* Voice — play / stop */}
+            <ActionBtn title={speaking ? 'Stop' : 'Read aloud'} onClick={handleSpeak} active={speaking} activeColor="var(--accent)">
+              {speaking ? (
+                /* Animated sound bars while speaking */
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="4"  y1="6"  x2="4"  y2="18" style={{ animation: 'bar1 0.8s ease-in-out infinite alternate' }}/>
+                  <line x1="9"  y1="3"  x2="9"  y2="21" style={{ animation: 'bar2 0.8s ease-in-out infinite alternate' }}/>
+                  <line x1="14" y1="8"  x2="14" y2="16" style={{ animation: 'bar3 0.8s ease-in-out infinite alternate' }}/>
+                  <line x1="19" y1="5"  x2="19" y2="19" style={{ animation: 'bar4 0.8s ease-in-out infinite alternate' }}/>
+                </svg>
+              ) : (
+                /* Speaker icon */
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                </svg>
+              )}
             </ActionBtn>
 
             {/* Thumb up */}
@@ -218,6 +285,14 @@ export default function MessageBubble({ message, isLast, lastUserMsg, convId, on
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes bar1 { from { transform: scaleY(0.4); } to { transform: scaleY(1.0); } }
+        @keyframes bar2 { from { transform: scaleY(1.0); } to { transform: scaleY(0.3); } }
+        @keyframes bar3 { from { transform: scaleY(0.6); } to { transform: scaleY(1.0); } }
+        @keyframes bar4 { from { transform: scaleY(0.3); } to { transform: scaleY(0.8); } }
+      `}</style>
     </div>
   );
 }
+    
