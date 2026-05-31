@@ -111,7 +111,10 @@ export default function App() {
     if (!snap.exists()) return;
     const msgs    = snap.data().messages || [];
     const trimmed = [...msgs];
+    // Remove last assistant message(s)
     while (trimmed.length && trimmed[trimmed.length - 1].role === 'assistant') trimmed.pop();
+    // Also remove the last user message — handleSend will re-add it, preventing duplicates
+    if (trimmed.length && trimmed[trimmed.length - 1].role === 'user') trimmed.pop();
     await updateDoc(convRef, { messages: trimmed, updatedAt: new Date() });
     handleSend(originalMsg);
   }, [currentConvId, isSending, isStreaming, getConvRef, handleSend]);
@@ -274,4 +277,4 @@ export default function App() {
   );
 }
 
-      
+
