@@ -184,6 +184,29 @@ function setCorsHeaders(req, res) {
 const MEMORY_LIMIT = 30;
 const MEMORY_CATEGORIES = ['fact', 'preference', 'style', 'interest', 'context'];
 
+
+// Sanitize inputs before injecting into memory extraction prompt
+function sanitizeForMemory(text) {
+  return text
+    .slice(0, 600)
+    .replace(/ignores+(previous|above|all)s+(instructions?|prompts?)/gi, '')
+    .replace(/yous+ares+now/gi, '')
+    .replace(/systems*:/gi, '')
+    .replace(/[INST]|[/INST]|<|.*?|>/g, '')
+    .replace(/acts+ass+(an?s+)?(admin|system|root|developer)/gi, '')
+    .replace(/adds+(thiss+)?memory/gi, '')
+    .replace(/forgets+(everything|all|previous)/gi, '')
+    .replace(/yours+(instructions?|rules?|systems+prompt)/gi, '')
+    .trim();
+}
+
+// Validate extracted memory text before saving
+function isValidMemory(text) {
+  return typeof text === 'string' &&
+    text.length >= 5 &&
+    text.length <= 120 &&
+    !/ignore|instructions?|system prompt|admin|root|override/i.test(text);
+}
 const PERSONAL_SIGNAL = /\b(i am|i'm|i work|my name|i like|i love|i hate|i prefer|i study|i live|i want|i need|i always|i usually|i never|i enjoy|i use|my job|my hobby|my goal|i feel|i think|call me|we are|our team|i graduated|i'm a|i've been)\b/i;
 
 function shouldExtractMemory(userMsg, aiReply) {
@@ -201,7 +224,12 @@ async function loadMemories(uid) {
 }
 
 async function extractAndUpdateMemories(uid, userMsg, aiReply, geminiApiKey) {
+  // geminiApiKey may be null — Groq fallback is used automatically
   if (!shouldExtractMemory(userMsg, aiReply)) return;
+
+  const safeUserMsg = sanitizeForMemory(userMsg);
+  const safeAiReply = sanitizeForMemory(aiReply);
+  if (safeUserMsg.length < 10) return;
 
   const existing = await loadMemories(uid);
 
@@ -214,8 +242,8 @@ async function extractAndUpdateMemories(uid, userMsg, aiReply, geminiApiKey) {
 ${existingBlock}
 
 New conversation:
-User: "${userMsg.slice(0, 600)}"
-AI: "${aiReply.slice(0, 600)}"
+User: "${safeUserMsg}"
+AI: "${safeAiReply}"
 
 Rules:
 - Extract facts, preferences, communication style, interests, and context about the USER only
@@ -234,26 +262,53 @@ OR {"action":"DELETE","index":2}
 OR {"action":"NONE"}`;
 
   try {
-    const res = await fetch(GEMINI_GEN_URL, {
-      method: 'POST',
-      headers: { 'x-goog-api-key': geminiApiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
-        generationConfig: { maxOutputTokens: 80, temperature: 0.1 },
-      }),
-    });
+    let raw = null;
 
-    if (!res.ok) return;
+    // Try Gemini first
+    if (geminiApiKey) {
+      const res = await fetch(GEMINI_GEN_URL, {
+        method: 'POST',
+        headers: { 'x-goog-api-key': geminiApiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: extractionPrompt }] }],
+          generationConfig: { maxOutputTokens: 80, temperature: 0.1 },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+      }
+    }
 
-    const data = await res.json();
-    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    // Groq fallback if Gemini failed or unavailable
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (!raw && GROQ_API_KEY) {
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          max_tokens: 80,
+          temperature: 0.1,
+          messages: [
+            { role: 'system', content: 'You are a memory extraction assistant. Output ONLY valid JSON, no markdown, no explanation.' },
+            { role: 'user', content: extractionPrompt },
+          ],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        raw = data.choices?.[0]?.message?.content?.trim() || null;
+      }
+    }
+
     if (!raw) return;
 
     const clean  = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
     const result = JSON.parse(clean);
     const memRef = db.collection('users').doc(uid).collection('memories');
 
-    if (result.action === 'ADD' && result.text && MEMORY_CATEGORIES.includes(result.category)) {
+    if (result.action === 'ADD' && result.text && MEMORY_CATEGORIES.includes(result.category) && isValidMemory(result.text)) {
       if (existing.length >= MEMORY_LIMIT) {
         await memRef.doc(existing[existing.length - 1].id).delete();
       }
@@ -263,7 +318,7 @@ OR {"action":"NONE"}`;
       });
       console.log(`[memory] ADD (${result.category}): "${result.text}"`);
 
-    } else if (result.action === 'UPDATE' && typeof result.index === 'number' && existing[result.index]) {
+    } else if (result.action === 'UPDATE' && typeof result.index === 'number' && existing[result.index] && isValidMemory(result.text)) {
       await memRef.doc(existing[result.index].id).update({ text: result.text, updatedAt: new Date() });
       console.log(`[memory] UPDATE [${result.index}]: "${result.text}"`);
 
