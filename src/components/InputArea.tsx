@@ -22,6 +22,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
   const [processing, setProcessing] = useState(false);
   const [fileError,  setFileError]  = useState('');
   const [webSearch,  setWebSearch]  = useState(false);
+  const [useThinking, setUseThinking] = useState(false);
   const textareaRef  = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -319,4 +320,4 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
     </div>
   );
 }
-                                                                
+      
