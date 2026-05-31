@@ -1,4 +1,5 @@
-// InputArea.tsx — v2.1 — Floating ChatGPT-style layout; gradient fade above; no model selector
+// InputArea.tsx — v2.3 — Improved file processing indicator with progress bar; better error UX
+// v2.2 — Truly transparent floating input; gradient fade via background not mask
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { processFile, getFileIcon } from '../lib/fileReader';
 import { haptic } from '../lib/haptic';
@@ -8,7 +9,7 @@ const ACCEPTED = '.pdf,.txt,.md,.csv,.docx,.jpg,.jpeg,.png,.gif,.webp,image/*';
 const MAX_SIZE  = 20 * 1024 * 1024; // 20MB
 
 interface Props {
-  onSend: (text: string, attachment?: Attachment, useWebSearch?: boolean) => void;
+  onSend: (text: string, attachment?: Attachment, useWebSearch?: boolean, useThinking?: boolean) => void;
   onStop: () => void;
   isSending: boolean;
   isStreaming: boolean;
@@ -42,11 +43,13 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
     const text = value.trim();
     const att  = attachment ?? undefined;
     const ws   = webSearch;
+    const th   = useThinking;
     setValue('');
     setAttachment(null);
     setFileError('');
     setWebSearch(false);
-    onSend(text || 'Please analyze this file.', att, ws);
+    setUseThinking(false);
+    onSend(text || 'Please analyze this file.', att, ws, th);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -73,16 +76,14 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
   const busy = isSending || isStreaming;
 
   return (
-    /* Floating wrapper — transparent bg, gradient fade masks messages above */
+    /* Floating wrapper — top fades transparent → page bg so messages dissolve behind input */
     <div style={{
       position: 'relative',
       flexShrink: 0,
-      paddingTop: '32px',
+      paddingTop: '40px',
       paddingInline: '16px',
       paddingBottom: 'calc(12px + var(--sab))',
-      background: 'transparent',
-      maskImage: 'linear-gradient(to bottom, transparent 0%, black 28px)',
-      WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 28px)',
+      background: 'var(--bg)',
     }}>
       <div style={{ maxWidth: '740px', margin: '0 auto' }}>
 
@@ -95,12 +96,20 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
             border: '1px solid var(--border)',
           }}>
             {processing ? (
-              <>
-                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--glass-3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: '16px', height: '16px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+              <div style={{ width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ width: '16px', height: '16px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-1)' }}>Reading file…</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Please wait</div>
+                  </div>
                 </div>
-                <span style={{ fontSize: '13px', color: 'var(--text-3)' }}>Reading file…</span>
-              </>
+                <div style={{ height: '3px', borderRadius: '999px', background: 'var(--glass-3)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: '40%', borderRadius: '999px', background: 'var(--accent)', animation: 'progress-slide 1.4s ease-in-out infinite' }} />
+                </div>
+              </div>
             ) : attachment && (
               <>
                 {attachment.type === 'image'
@@ -133,12 +142,12 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
 
         {/* ── Floating input box ── */}
         <div style={{
-          background: 'var(--input-bg)',
-          backdropFilter: 'blur(32px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(32px) saturate(200%)',
+          background: 'var(--glass-1)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
           border: '1px solid var(--border)',
           borderRadius: '20px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18), 0 1px 0 rgba(255,255,255,0.06) inset',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
           padding: '12px 14px 10px',
           display: 'flex',
           flexDirection: 'column',
@@ -205,27 +214,49 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
                 disabled={busy}
                 title={webSearch ? 'Web search on' : 'Web search off'}
                 style={{
-                  height: '34px', paddingInline: '10px',
-                  display: 'flex', alignItems: 'center', gap: '5px',
+                  width: '34px', height: '34px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: '10px',
                   background: webSearch ? 'var(--accent-dim)' : 'transparent',
                   border: 'none',
                   color: webSearch ? 'var(--accent)' : 'var(--text-3)',
                   cursor: busy ? 'default' : 'pointer',
                   opacity: busy ? 0.4 : 1,
-                  fontSize: '12.5px', fontWeight: 500,
                   transition: 'all 0.15s',
-                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={e => { if (!busy && !webSearch) (e.currentTarget as HTMLButtonElement).style.background = 'var(--glass-3)'; }}
                 onMouseLeave={e => { if (!webSearch) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/>
                   <line x1="2" y1="12" x2="22" y2="12"/>
                   <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
-                <span>{webSearch ? 'Search on' : 'Search'}</span>
+              </button>
+
+              {/* Think button */}
+              <button
+                onClick={() => { haptic.light(); setUseThinking(t => !t); }}
+                disabled={busy}
+                title={useThinking ? 'Think mode on' : 'Think mode off'}
+                style={{
+                  width: '34px', height: '34px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  borderRadius: '10px',
+                  background: useThinking ? 'rgba(180,120,255,0.15)' : 'transparent',
+                  border: 'none',
+                  color: useThinking ? '#c96eff' : 'var(--text-3)',
+                  cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.4 : 1,
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { if (!busy && !useThinking) (e.currentTarget as HTMLButtonElement).style.background = 'var(--glass-3)'; }}
+                onMouseLeave={e => { if (!useThinking) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                  <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+                </svg>
               </button>
 
             </div>
@@ -284,8 +315,8 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
         <input ref={fileInputRef} type="file" accept={ACCEPTED} onChange={handleFileChange} style={{ display: 'none' }} />
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
     </div>
   );
 }
-                  
+                                                                
