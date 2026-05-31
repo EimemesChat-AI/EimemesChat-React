@@ -1,4 +1,5 @@
 // App.tsx
+// v2.3 — Prevent duplicate empty chats; handleNewChat checks for existing empty conv
 // v2.2 — InputArea floats over MessageList via absolute positioning
 import React, { useState, useCallback, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -69,14 +70,22 @@ export default function App() {
   const { messages, setMessages, convTitle, setConvTitle, isStreamingRef }           = useMessages(currentConvId);
 
   const handleNewChat = useCallback(async () => {
+    // If already in an empty conversation, just ensure we're on chat view — don't create another
+    if (currentConvId) {
+      const currentConv = conversations.find(c => c.id === currentConvId);
+      if (!currentConv?.messages?.length) {
+        setView('chat');
+        return;
+      }
+    }
+    // If no current conv or current conv has messages, create a fresh one
     const id = await createNewChat();
     if (id) { setCurrentConvId(id); setView('chat'); }
-  }, [createNewChat, setView]);
+  }, [createNewChat, setView, currentConvId, conversations]);
 
   const {
     isSending, isStreaming, isTyping, isSearching,
     streamText, streamDone, streamModel, streamDisclaimer, streamSources,
-    streamThinking, isThinking,
     sendMessage, stopStreaming,
   } = useChat(
     currentConvId, setCurrentConvId,
@@ -96,11 +105,11 @@ export default function App() {
     }).catch(() => {});
   }, [currentUser]);
 
-  const handleSend = useCallback((text: string, attachment?: Attachment, useWebSearch?: boolean, useThinking?: boolean) => {
+  const handleSend = useCallback((text: string, attachment?: Attachment, useWebSearch?: boolean, modelMode?: string) => {
     sendMessage(text, () => {
       setChipsUsed(true);
       localStorage.setItem('ec_chips_used', 'true');
-    }, attachment, useWebSearch, undefined, useThinking);
+    }, attachment, useWebSearch, modelMode);
   }, [sendMessage]);
 
   const handleRegen = useCallback(async (originalMsg: string) => {
@@ -111,10 +120,7 @@ export default function App() {
     if (!snap.exists()) return;
     const msgs    = snap.data().messages || [];
     const trimmed = [...msgs];
-    // Remove last assistant message(s)
     while (trimmed.length && trimmed[trimmed.length - 1].role === 'assistant') trimmed.pop();
-    // Also remove the last user message — handleSend will re-add it, preventing duplicates
-    if (trimmed.length && trimmed[trimmed.length - 1].role === 'user') trimmed.pop();
     await updateDoc(convRef, { messages: trimmed, updatedAt: new Date() });
     handleSend(originalMsg);
   }, [currentConvId, isSending, isStreaming, getConvRef, handleSend]);
@@ -213,8 +219,6 @@ export default function App() {
                 streamModel={streamModel}
                 streamDisclaimer={streamDisclaimer}
                 streamSources={streamSources}
-                streamThinking={streamThinking}
-                isThinking={isThinking}
                 convId={currentConvId}
                 chipsUsed={chipsUsed}
                 onChipClick={handleSend}
@@ -277,4 +281,4 @@ export default function App() {
   );
 }
 
-
+      
