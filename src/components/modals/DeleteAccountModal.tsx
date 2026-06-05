@@ -28,7 +28,7 @@ export default function DeleteAccountModal({ visible, onClose, getUserConvsRef }
       }
       await deleteUser(currentUser);
       onClose();
-      showToast('Account deleted. Goodbye 👋');
+      showToast('Account deleted. Goodbye!');
     } catch (err: any) {
       setLoading(false);
       onClose();
@@ -68,7 +68,7 @@ export default function DeleteAccountModal({ visible, onClose, getUserConvsRef }
           borderRadius: '12px', padding: '10px 14px', marginBottom: '20px',
           textAlign: 'left', lineHeight: 1.5,
         }}>
-          ⚠️ You will be immediately signed out and your account will be deleted. This cannot be reversed.
+          You will be immediately signed out and your account will be deleted. This cannot be reversed.
         </div>
         <button
           onClick={handleDelete}
