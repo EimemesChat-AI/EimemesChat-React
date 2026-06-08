@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
-  signInWithPopup, signInWithEmailAndPassword,
+  signInWithRedirect,
+  signInWithPopup,
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
 import { auth, gauth } from '../../firebase';
@@ -20,6 +22,13 @@ function friendlyAuthError(code: string): string {
   } as Record<string, string>)[code] ?? 'Authentication failed. Please try again.';
 }
 
+// Detect if running inside a WebView
+function isWebView(): boolean {
+  const ua = navigator.userAgent;
+  return /wv|WebView/.test(ua) ||
+    (ua.includes('Android') && !ua.includes('Chrome/'));
+}
+
 interface Props { visible: boolean; }
 
 export default function LoginModal({ visible }: Props) {
@@ -33,7 +42,13 @@ export default function LoginModal({ visible }: Props) {
 
   const handleGoogle = () => {
     if (!agreed) { setError('Please agree to the terms first.'); return; }
-    signInWithPopup(auth, gauth).catch(e => setError(friendlyAuthError(e.code)));
+    if (isWebView()) {
+      // Use redirect in WebView — popup doesn't work
+      signInWithRedirect(auth, gauth).catch(e => setError(friendlyAuthError(e.code)));
+    } else {
+      // Normal browser — keep popup
+      signInWithPopup(auth, gauth).catch(e => setError(friendlyAuthError(e.code)));
+    }
   };
 
   const handleEmail = () => {
@@ -45,7 +60,7 @@ export default function LoginModal({ visible }: Props) {
 
   const handleSignup = () => {
     if (!agreed) { setError('Please agree to the terms first.'); return; }
-    if (!email)       { setError('Please enter your email address.'); return; }
+    if (!email)              { setError('Please enter your email address.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     createUserWithEmailAndPassword(auth, email, password)
       .catch(e => setError(friendlyAuthError(e.code)));
@@ -145,4 +160,3 @@ export default function LoginModal({ visible }: Props) {
     </div>
   );
 }
-
