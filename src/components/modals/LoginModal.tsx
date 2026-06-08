@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import {
-  signInWithRedirect,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
 import { auth, gauth } from '../../firebase';
+
+declare global {
+  interface Window {
+    ReactNativeWebView?: { postMessage: (msg: string) => void };
+  }
+}
 
 function friendlyAuthError(code: string): string {
   return ({
@@ -22,7 +27,6 @@ function friendlyAuthError(code: string): string {
   } as Record<string, string>)[code] ?? 'Authentication failed. Please try again.';
 }
 
-// Detect if running inside a WebView
 function isWebView(): boolean {
   const ua = navigator.userAgent;
   return /wv|WebView/.test(ua) ||
@@ -42,11 +46,14 @@ export default function LoginModal({ visible }: Props) {
 
   const handleGoogle = () => {
     if (!agreed) { setError('Please agree to the terms first.'); return; }
-    if (isWebView()) {
-      // Use redirect in WebView — popup doesn't work
-      signInWithRedirect(auth, gauth).catch(e => setError(friendlyAuthError(e.code)));
+    if (isWebView() && window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'GOOGLE_AUTH',
+        url: `https://chat-eimeme.firebaseapp.com/__/auth/handler?` +
+          `providerId=google.com&` +
+          `redirectUrl=${encodeURIComponent('https://eimemes-chat-ai.vercel.app')}`
+      }));
     } else {
-      // Normal browser — keep popup
       signInWithPopup(auth, gauth).catch(e => setError(friendlyAuthError(e.code)));
     }
   };
