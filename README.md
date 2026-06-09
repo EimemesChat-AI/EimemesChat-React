@@ -1,6 +1,6 @@
 # EimemesChat AI
 
-A fast, intelligent AI chat assistant built with React, TypeScript, and powered by Groq LLM API. Supports document reading, image analysis, personalization, and PWA installation.
+A fast, intelligent AI chat assistant built with React, TypeScript, and powered by Groq LLM and GEMINI API. Supports document reading, image analysis, personalization, and PWA installation.
 
 **Live:** [eimemes-chat-ai.vercel.app](https://eimemes-chat-ai.vercel.app)
 
@@ -8,7 +8,7 @@ A fast, intelligent AI chat assistant built with React, TypeScript, and powered 
 
 ## Features
 
-- **AI Chat** — Streaming responses powered by Groq (Llama 3)
+- **AI Chat** — Streaming responses powered by Groq (Llama 3) and Gemini-flash-lite
 - **File Attachments** — Upload and analyze PDFs, Word docs, images, and text files
 - **Personalization** — Set your tone, nickname, occupation and custom AI instructions
 - **Conversation History** — All chats saved and synced via Firebase Firestore
