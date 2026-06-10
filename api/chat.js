@@ -34,7 +34,7 @@ const DAILY_LIMIT      = 150;
 const MODEL_TIMEOUT_MS = 25000;
 
 /* ── Model config ─────────────────────────────────────────────── */
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.5-flash";
 // Native REST endpoint — streaming with SSE
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
 // Non-streaming for title/search optimization
