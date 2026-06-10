@@ -31,7 +31,7 @@ const PROMPT_FINGERPRINT = buildFingerprint(FINGERPRINT_PROMPT);
 
 /* ── Constants ────────────────────────────────────────────────── */
 const DAILY_LIMIT      = 150;
-const MODEL_TIMEOUT_MS = 25000;
+const MODEL_TIMEOUT_MS = 60000;
 
 /* ── Model config ─────────────────────────────────────────────── */
 const GEMINI_MODEL = "gemini-3.5-flash";
