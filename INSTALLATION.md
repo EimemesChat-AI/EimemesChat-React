@@ -1,48 +1,62 @@
-# Installation Guide
+# EimemesChat AI – Installation Guide
 
-## iOS (Progressive Web App)
+---
 
-1. Launch **Safari** on your iOS device.  
-   Other browsers (Chrome, Firefox, Edge) do not support PWA installation on iOS.
+## For Android User
 
-2. Navigate to:  
-   [https://eimemes-chat-ai.vercel.app](https://eimemes-chat-ai.vercel.app)
+**Step 1 – Download the APK**  
+Get the latest version from the official release:  
+[→ Download EimemesChat AI APK](https://github.com/michaelkilong/EimemesChat-React/releases/download/v4.0.0/EimemesChat.apk)
 
-3. Tap the **Share** button (square icon with an upward arrow) at the bottom of the screen.
+**Step 2 – Allow unknown sources**  
+Open the downloaded `.apk` file. If a warning about “Install blocked” appears, tap **Settings** and grant permission for your browser or file manager.
 
-4. From the share sheet, scroll down and select **Add to Home Screen**.
+**Step 3 – Install**  
+Tap **Install** and wait for the process to finish.
 
-5. Optionally edit the app name (e.g., “EimemesChat”), then tap **Add**.
+**Step 4 – Launch**  
+Tap **Open** to start using the app. The icon will be added to your home screen or app drawer.
 
-The application icon will be placed on your home screen. Subsequent launches will open the app in full‑screen mode.
+---
 
-## Android (APK)
+## For iOS User (PWA – Add to Home Screen)
 
-1. Download the APK file from the official release page:  
-   [Download EimemesChat AI APK](https://github.com/michaelkilong/EimemesChat-React/releases/download/v4.0.0/EimemesChat.apk)
+**Step 1 – Use Safari**  
+Open **Safari** (Chrome, Firefox, and Edge do not support PWA installation on iOS).
 
-2. Once the download completes, open the APK file.
+**Step 2 – Visit the app**  
+Go to: [https://eimemes-chat-ai.vercel.app](https://eimemes-chat-ai.vercel.app)
 
-3. If a warning about “unknown sources” appears, grant the required permission (your browser or file manager will request it).
+**Step 3 – Open Share menu**  
+Tap the **Share** button (square with an upward arrow) at the bottom of the screen.
 
-4. Tap **Install**.
+**Step 4 – Add to Home Screen**  
+Scroll down and tap **Add to Home Screen**. Optionally edit the name (e.g., “EimemesChat”), then tap **Add**.
 
-5. After installation, launch the app from your home screen or app drawer.
+**Step 5 – Open**  
+The app icon now appears on your home screen. Tap it to launch the full‑screen app.
 
-## Desktop (Web Application)
+---
 
-Visit the same URL in any modern browser:  
-[https://eimemes-chat-ai.vercel.app](https://eimemes-chat-ai.vercel.app)
+## For Desktop User (Web)
 
-For a native window experience (Chromium‑based browsers):
-- Click the **install icon** (monitor with a down arrow) located in the address bar, or
-- Select **Install EimemesChat AI…** from the browser’s main menu.
+**Standard access**  
+Visit [https://eimemes-chat-ai.vercel.app](https://eimemes-chat-ai.vercel.app) in any modern browser (Chrome, Edge, Firefox, Safari).
 
-The website works identically without installation as well.
+**Install as standalone app** (Chromium‑based browsers only)  
+- Click the **install icon** (monitor with a down arrow) in the address bar, or  
+- Click the browser menu (three dots) → **Install EimemesChat AI…**
 
-## Support
+The website works identically without installation.
 
-If you encounter login problems or any other issues, please visit the support page:  
-[https://app-eimemeschat.vercel.app/support.html](https://app-eimemeschat.vercel.app/support.html)
+---
 
-You can also email directly: **eimemeschatai@gmail.com**
+## Need help?
+
+- **Support page (FAQ & contact form):**  
+  [https://app-eimemeschat.vercel.app/support.html](https://app-eimemeschat.vercel.app/support.html)
+
+- **Direct email:**  
+  eimemeschatai@gmail.com
+
+*Typical response time: 24–48 hours.*
