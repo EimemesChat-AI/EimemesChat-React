@@ -1,4 +1,4 @@
-// AboutView.tsx — v1.0
+// AboutView.tsx — v1.1 (with actual logo)
 import React from 'react';
 
 interface Props {
@@ -48,20 +48,21 @@ export default function AboutView({ onBack, onOpenLicenses }: Props) {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           padding: '32px 16px', gap: '10px', textAlign: 'center',
         }}>
-          {/* App icon placeholder */}
-          <div style={{
-            width: '80px', height: '80px', borderRadius: '20px',
-            background: 'linear-gradient(135deg, #1a1040, #0d0820)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginBottom: '4px',
-          }}>
-            <span style={{
-              fontFamily: "'Bricolage Grotesque', sans-serif",
-              fontWeight: 700, fontSize: '42px',
-              background: 'linear-gradient(135deg, #5e9cff, #c96eff)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-            }}>E</span>
-          </div>
+          {/* App icon - actual logo from /public/chat-logo.png */}
+          <img 
+            src="/chat-logo.png"
+            alt="App logo"
+            style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '20px',
+              objectFit: 'cover',
+            }}
+            onError={(e) => {
+              // Optional: fallback in case image fails to load
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
           <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '22px', fontWeight: 700, color: 'var(--text-1)' }}>
             EimemesChat AI
           </div>
