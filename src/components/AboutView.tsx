@@ -1,4 +1,4 @@
-// AboutView.tsx — v1.2 (logo without clipping)
+// AboutView.tsx — v1.3 (larger logo, removed duplicate brand name)
 import React from 'react';
 
 interface Props {
@@ -43,29 +43,27 @@ export default function AboutView({ onBack, onOpenLicenses }: Props) {
 
       <div className="scroll-thin" style={{ flex: 1, overflowY: 'auto', padding: '8px 20px 48px' }}>
 
-        {/* App identity */}
+        {/* App identity - logo only (brand name is inside logo) */}
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '32px 16px', gap: '10px', textAlign: 'center',
+          padding: '32px 16px', gap: '8px', textAlign: 'center',  // reduced gap since no text
         }}>
-          {/* App icon - actual logo from /public/chat-logo.png (no clipping) */}
+          {/* App icon - larger size (96x96) */}
           <img 
             src="/chat-logo.png"
             alt="App logo"
             style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '0px',        // removed rounded corners (was clipping transparent logo)
-              objectFit: 'contain',       // shows entire logo without cropping
-              marginBottom: '4px',        // restored original spacing from the old div
+              width: '96px',           // was 80px - increased size
+              height: '96px',          // was 80px
+              borderRadius: '0px',
+              objectFit: 'contain',
+              marginBottom: '4px',
             }}
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
-          <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '22px', fontWeight: 700, color: 'var(--text-1)' }}>
-            EimemesChat AI
-          </div>
+          {/* Removed the "EimemesChat AI" text line - logo already has it */}
           <div style={{ fontSize: '14px', color: 'var(--text-3)' }}>
             Version 4.0 
           </div>
