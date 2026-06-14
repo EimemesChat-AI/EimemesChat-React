@@ -19,7 +19,7 @@ The application icon will be placed on your home screen. Subsequent launches wil
 ## Android (APK)
 
 1. Download the APK file from the official release page:  
-   [Download EimemesChat AI v4.0 APK](https://github.com/michaelkilong/EimemesChat-React/releases/download/v4.0.0/EimemesChat-v4.0.0.apk)
+   [Download EimemesChat AI APK](https://github.com/michaelkilong/EimemesChat-React/releases/download/v4.0.0/EimemesChat.apk)
 
 2. Once the download completes, open the APK file.
 
