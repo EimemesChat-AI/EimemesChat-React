@@ -39,3 +39,10 @@ For a native window experience (Chromium‑based browsers):
 - Select **Install EimemesChat AI…** from the browser’s main menu.
 
 The website works identically without installation as well.
+
+## Support
+
+If you encounter login problems or any other issues, please visit the support page:  
+[https://app-eimemeschat.vercel.app/support.html](https://app-eimemeschat.vercel.app/support.html)
+
+You can also email directly: **eimemeschatai@gmail.com**
