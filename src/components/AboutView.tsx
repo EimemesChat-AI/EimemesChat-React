@@ -1,4 +1,4 @@
-// AboutView.tsx — v1.1 (with actual logo)
+// AboutView.tsx — v1.2 (logo without clipping)
 import React from 'react';
 
 interface Props {
@@ -48,18 +48,18 @@ export default function AboutView({ onBack, onOpenLicenses }: Props) {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           padding: '32px 16px', gap: '10px', textAlign: 'center',
         }}>
-          {/* App icon - actual logo from /public/chat-logo.png */}
+          {/* App icon - actual logo from /public/chat-logo.png (no clipping) */}
           <img 
             src="/chat-logo.png"
             alt="App logo"
             style={{
               width: '80px',
               height: '80px',
-              borderRadius: '20px',
-              objectFit: 'cover',
+              borderRadius: '0px',        // removed rounded corners (was clipping transparent logo)
+              objectFit: 'contain',       // shows entire logo without cropping
+              marginBottom: '4px',        // restored original spacing from the old div
             }}
             onError={(e) => {
-              // Optional: fallback in case image fails to load
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
