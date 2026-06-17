@@ -1,4 +1,5 @@
-// InputArea.tsx — v2.3 — Improved file processing indicator with progress bar; better error UX
+// InputArea.tsx — v2.4 — iOS glass morphism
+// v2.3 — Improved file processing indicator with progress bar; better error UX
 // v2.2 — Truly transparent floating input; gradient fade via background not mask
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { processFile, getFileIcon } from '../lib/fileReader';
@@ -18,13 +19,13 @@ interface Props {
 
 export default function InputArea({ onSend, onStop, isSending, isStreaming, dailyLimitReached }: Props) {
   const [value,      setValue]      = useState('');
-  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [attachment, setAttachment] = useState<<Attachment | null>(null);
   const [processing, setProcessing] = useState(false);
   const [fileError,  setFileError]  = useState('');
   const [webSearch,  setWebSearch]  = useState(false);
   const [useThinking, setUseThinking] = useState(false);
-  const textareaRef  = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef  = useRef<<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<<HTMLInputElement>(null);
 
   const autoResize = () => {
     const el = textareaRef.current;
@@ -57,7 +58,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend(); }
   };
 
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
@@ -93,13 +94,17 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
           <div style={{
             display: 'flex', alignItems: 'center', gap: '10px',
             padding: '10px 14px', marginBottom: '8px',
-            background: 'var(--glass-2)', borderRadius: '16px',
+            background: 'var(--glass-2)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            borderRadius: '20px',
             border: '1px solid var(--border)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
           }}>
             {processing ? (
               <div style={{ width: '100%' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--glass-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <div style={{ width: '16px', height: '16px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                   </div>
                   <div>
@@ -147,9 +152,9 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
           backdropFilter: 'blur(24px) saturate(180%)',
           WebkitBackdropFilter: 'blur(24px) saturate(180%)',
           border: '1px solid var(--border)',
-          borderRadius: '20px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
-          padding: '12px 14px 10px',
+          borderRadius: '24px',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 24px rgba(0,0,0,0.15)',
+          padding: '14px 16px 12px',
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
@@ -170,14 +175,15 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
               border: 'none',
               outline: 'none',
               resize: 'none',
-              fontSize: '15.5px',
+              fontSize: '16px',
               color: 'var(--text-1)',
-              lineHeight: 1.55,
+              lineHeight: 1.5,
               minHeight: '26px',
               maxHeight: '200px',
               overflowY: 'auto',
               fontFamily: 'inherit',
               padding: 0,
+              caretColor: 'var(--accent)',
             }}
           />
 
@@ -185,7 +191,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 
             {/* Left: attach + web search */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
 
               {/* Paperclip */}
               <button
@@ -198,7 +204,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
                   borderRadius: '10px', background: 'transparent', border: 'none',
                   color: attachment ? 'var(--accent)' : 'var(--text-3)',
                   cursor: (busy || processing) ? 'default' : 'pointer',
-                  opacity: (busy || processing) ? 0.4 : 1,
+                  opacity: (busy || processing) ? 0.3 : 1,
                   transition: 'color 0.15s, background 0.15s',
                 }}
                 onMouseEnter={e => { if (!busy && !processing) (e.currentTarget as HTMLButtonElement).style.background = 'var(--glass-3)'; }}
@@ -222,7 +228,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
                   border: 'none',
                   color: webSearch ? 'var(--accent)' : 'var(--text-3)',
                   cursor: busy ? 'default' : 'pointer',
-                  opacity: busy ? 0.4 : 1,
+                  opacity: busy ? 0.3 : 1,
                   transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => { if (!busy && !webSearch) (e.currentTarget as HTMLButtonElement).style.background = 'var(--glass-3)'; }}
@@ -248,7 +254,7 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
                   border: useThinking ? '1px solid rgba(180,120,255,0.3)' : '1px solid transparent',
                   color: useThinking ? '#c96eff' : 'var(--text-3)',
                   cursor: busy ? 'default' : 'pointer',
-                  opacity: busy ? 0.4 : 1,
+                  opacity: busy ? 0.3 : 1,
                   fontSize: '12.5px', fontWeight: 500,
                   transition: 'all 0.15s',
                 }}
@@ -288,12 +294,12 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
                 title="Send message"
                 style={{
                   width: '34px', height: '34px', borderRadius: '50%',
-                  background: canSend ? 'var(--send-bg)' : 'var(--glass-3)',
-                  border: 'none',
-                  color: canSend ? 'var(--send-fg)' : 'var(--text-3)',
+                  background: canSend ? 'var(--glass-2)' : 'var(--glass-3)',
+                  border: canSend ? '1px solid var(--border)' : '1px solid var(--border-b)',
+                  color: canSend ? 'var(--text-1)' : 'var(--text-3)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: canSend ? 'pointer' : 'default',
-                  boxShadow: canSend ? '0 2px 12px rgba(0,122,255,0.4)' : 'none',
+                  boxShadow: canSend ? '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)' : 'none',
                   flexShrink: 0,
                   transition: 'background 0.15s, box-shadow 0.15s, color 0.15s',
                 }}
@@ -323,4 +329,3 @@ export default function InputArea({ onSend, onStop, isSending, isStreaming, dail
     </div>
   );
 }
-                                 
